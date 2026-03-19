@@ -1,0 +1,5 @@
+{
+  "name": "Roulette Tracker",
+  "description": "A real-time European roulette spin tracker with history, statistics, and live updates.",
+  "requestFramePermissions": []
+}
