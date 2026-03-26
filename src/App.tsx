@@ -129,47 +129,54 @@ export default function App() {
         </div>
       </header>
 
-      <main className="flex-1 max-w-2xl w-full mx-auto px-6 py-6 flex flex-col gap-6">
-        {/* Latest number — big display */}
-        <div className="flex flex-col items-center justify-center py-8">
-          <AnimatePresence mode="wait">
-            {latest !== undefined ? (
-              <motion.div
-                key={latest}
-                initial={{ scale: 0.5, opacity: 0 }}
-                animate={{ scale: 1, opacity: 1 }}
-                exit={{ scale: 1.2, opacity: 0 }}
-                transition={{ type: 'spring', stiffness: 300, damping: 20 }}
-                className="flex flex-col items-center gap-3"
-              >
-                <div className={cn(
-                  "w-40 h-40 rounded-full flex items-center justify-center text-7xl font-black shadow-2xl border-4",
-                  getNumberColor(latest),
-                  getNumberBorderColor(latest)
-                )}>
-                  {latest}
-                </div>
-                <span className="text-lg font-bold text-zinc-300 tracking-wide">
-                  {latest === 0 ? 'Zero' : RED_NUMBERS.includes(latest) ? 'Red' : 'Black'}
-                  {' · '}
-                  {latest === 0 ? 'Neutral' : latest % 2 === 0 ? 'Even' : 'Odd'}
-                </span>
-              </motion.div>
-            ) : (
-              <motion.div
-                key="empty"
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                className="w-40 h-40 rounded-full border-2 border-dashed border-zinc-800 flex items-center justify-center"
-              >
-                <Hash className="w-12 h-12 text-zinc-700" />
-              </motion.div>
-            )}
-          </AnimatePresence>
+      <main className="flex-1 w-full px-6 py-6 flex flex-col md:flex-row gap-6 items-stretch">
+        {/* Left column — huge latest number (takes half width on md+) */}
+        <div className="w-full md:w-1/2 flex items-center justify-center">
+          <div className="w-full flex items-center justify-center py-8">
+            <AnimatePresence mode="wait">
+              {latest !== undefined ? (
+                <motion.div
+                  key={latest}
+                  initial={{ scale: 0.8, opacity: 0 }}
+                  animate={{ scale: 1, opacity: 1 }}
+                  exit={{ scale: 1.05, opacity: 0 }}
+                  transition={{ type: 'spring', stiffness: 300, damping: 20 }}
+                  className="flex flex-col items-center gap-6"
+                >
+                  <div
+                    className={cn(
+                      "rounded-full flex items-center justify-center font-black shadow-2xl border-4",
+                      getNumberColor(latest),
+                      getNumberBorderColor(latest)
+                    )}
+                    style={{ width: '45vw', height: '45vw', maxWidth: '720px', maxHeight: '720px', fontSize: '12vw' }}
+                  >
+                    {latest}
+                  </div>
+
+                  <span className="text-2xl md:text-3xl font-bold text-zinc-300 tracking-wide">
+                    {latest === 0 ? 'Zero' : RED_NUMBERS.includes(latest) ? 'Red' : 'Black'}
+                    {' · '}
+                    {latest === 0 ? 'Neutral' : latest % 2 === 0 ? 'Even' : 'Odd'}
+                  </span>
+                </motion.div>
+              ) : (
+                <motion.div
+                  key="empty"
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  className="rounded-full border-2 border-dashed border-zinc-800 flex items-center justify-center"
+                  style={{ width: '28vw', height: '28vw', maxWidth: '420px', maxHeight: '420px' }}
+                >
+                  <Hash className="w-12 h-12 text-zinc-700" />
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
         </div>
 
-        {/* History list */}
-        <div className="bg-zinc-900/50 border border-zinc-800/50 rounded-3xl overflow-hidden flex flex-col flex-1 min-h-0">
+        {/* Right column — history list (takes half width on md+, full width on small screens) */}
+        <div className="w-full md:w-1/2 flex flex-col bg-zinc-900/50 border border-zinc-800/50 rounded-3xl overflow-hidden min-h-0">
           <div className="px-5 py-3 border-b border-zinc-800/50 flex items-center justify-between bg-black/20">
             <div className="flex items-center gap-2">
               <History className="w-4 h-4 text-zinc-400" />
@@ -178,13 +185,13 @@ export default function App() {
             <span className="text-[10px] font-mono text-zinc-500">{spins.length} spins</span>
           </div>
 
-          <div className="overflow-y-auto p-3 space-y-1.5 custom-scrollbar" style={{ maxHeight: 'calc(100vh - 26rem)' }}>
+          <div className="overflow-y-auto p-3 space-y-1.5 custom-scrollbar" style={{ maxHeight: 'calc(100vh - 6rem)' }}>
             <AnimatePresence initial={false}>
               {spins.map((num, idx) => (
                 <motion.div
                   key={`${idx}-${num}`}
                   initial={{ opacity: 0, y: -8 }}
-                  animate={{ opacity: idx === 0 ? 1 : 0.7, y: 0 }}
+                  animate={{ opacity: idx === 0 ? 1 : 0.85, y: 0 }}
                   exit={{ opacity: 0, scale: 0.95 }}
                   className={cn(
                     "flex items-center justify-between px-4 py-2.5 rounded-xl border transition-colors",
