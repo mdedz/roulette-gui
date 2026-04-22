@@ -33,8 +33,7 @@ export default function App() {
 
   useEffect(() => {
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const host = window.location.host;
-    const socketUrl = `${protocol}//${host}`;
+    const socketUrl = `${protocol}//${window.location.host}/ws`;
 
     const connect = () => {
       const socket = new WebSocket(socketUrl);
