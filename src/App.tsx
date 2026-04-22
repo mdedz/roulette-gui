@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import CalibrationPage from './calibration/CalibrationPage';
 import { motion, AnimatePresence } from 'motion/react';
 import { History, Hash, Send } from 'lucide-react';
 import { clsx, type ClassValue } from 'clsx';
@@ -91,6 +92,7 @@ export default function App() {
   }, [inputNumber]);
 
   const latest = spins[0];
+  const [showCalibration, setShowCalibration] = useState(false);
 
   return (
     <div className="min-h-screen bg-[#0a0a0a] text-zinc-100 font-sans selection:bg-emerald-500/30 flex flex-col">
@@ -129,8 +131,25 @@ export default function App() {
       </header>
 
       <main className="flex-1 w-full px-6 py-6 flex flex-col md:flex-row gap-6 items-stretch">
-        {/* Left column — huge latest number (takes half width on md+) */}
-        <div className="w-full md:w-1/2 flex items-center justify-center">
+        {/* Calibration toggle */}
+        <div className="max-w-2xl mx-auto px-6 mb-4 w-full">
+          <div className="flex justify-end">
+            <button
+              onClick={() => setShowCalibration((s) => !s)}
+              className="text-sm bg-zinc-800 px-3 py-1 rounded"
+            >
+              {showCalibration ? 'Back to Roulette' : 'Open Calibration'}
+            </button>
+          </div>
+        </div>
+        {showCalibration ? (
+          <div className="w-full">
+            <CalibrationPage />
+          </div>
+        ) : (
+          <>
+          {/* Left column — huge latest number (takes half width on md+) */}
+          <div className="w-full md:w-1/2 flex items-center justify-center">
           <div className="w-full flex items-center justify-center py-8">
             <AnimatePresence mode="wait">
               {latest !== undefined ? (
@@ -226,6 +245,8 @@ export default function App() {
             )}
           </div>
         </div>
+          </>
+        )}
       </main>
 
       <style dangerouslySetInnerHTML={{ __html: `
