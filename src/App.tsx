@@ -36,36 +36,82 @@ export default function App() {
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const socketUrl = `${protocol}//${window.location.host}/ws`;
 
+    const reconnectAttempts = { current: 0 };
+    let heartbeatInterval: number | undefined;
+    let reconnectTimeout: number | undefined;
+
     const connect = () => {
+      console.info(`[WS] connecting to ${socketUrl} (attempt ${reconnectAttempts.current + 1})`);
       const socket = new WebSocket(socketUrl);
       ws.current = socket;
 
-      socket.onopen = () => {
+      socket.onopen = (ev) => {
+        console.info('[WS] open', ev);
+        reconnectAttempts.current = 0;
         setConnected(true);
+
+        // start heartbeat to detect silent disconnects
+        if (heartbeatInterval) window.clearInterval(heartbeatInterval);
+        heartbeatInterval = window.setInterval(() => {
+          try {
+            if (ws.current && ws.current.readyState === WebSocket.OPEN) {
+              ws.current.send(JSON.stringify({ type: 'PING', ts: Date.now() }));
+              // also record ping timestamp if needed
+              console.debug('[WS] ping sent');
+            }
+          } catch (e) {
+            console.warn('[WS] ping failed', e);
+          }
+        }, 20000); // every 20s
       };
 
       socket.onmessage = (event) => {
-        const message = JSON.parse(event.data);
-        if (message.type === 'INIT') {
-          setSpins(message.data);
-        } else if (message.type === 'NEW_SPIN') {
-          setSpins(prev => [message.data, ...prev].slice(0, 100));
+        try {
+          const message = JSON.parse(event.data);
+          console.debug('[WS] message', message);
+          if (message.type === 'INIT') {
+            setSpins(message.data);
+          } else if (message.type === 'NEW_SPIN') {
+            setSpins(prev => [message.data, ...prev].slice(0, 100));
+          }
+        } catch (err) {
+          console.error('[WS] failed to parse message', event.data, err);
         }
       };
 
-      socket.onclose = () => {
+      socket.onclose = (ev) => {
+        console.warn('[WS] closed', { code: ev.code, reason: ev.reason, wasClean: ev.wasClean });
         setConnected(false);
-        setTimeout(connect, 3000);
+        // stop heartbeat
+        if (heartbeatInterval) {
+          window.clearInterval(heartbeatInterval);
+          heartbeatInterval = undefined;
+        }
+        // exponential backoff for reconnects
+        reconnectAttempts.current++;
+        const backoff = Math.min(30000, 1000 * Math.pow(1.5, reconnectAttempts.current));
+        console.info(`[WS] reconnecting in ${backoff}ms (attempt ${reconnectAttempts.current})`);
+        reconnectTimeout = window.setTimeout(connect, backoff);
       };
 
       socket.onerror = (error) => {
-        console.error('WebSocket error:', error);
+        console.error('[WS] error', error);
       };
     };
+
+    // network online/offline events for extra visibility
+    const onOffline = () => console.warn('[NET] offline event');
+    const onOnline = () => console.info('[NET] online event');
+    window.addEventListener('offline', onOffline);
+    window.addEventListener('online', onOnline);
 
     connect();
 
     return () => {
+      if (reconnectTimeout) window.clearTimeout(reconnectTimeout);
+      if (heartbeatInterval) window.clearInterval(heartbeatInterval);
+      window.removeEventListener('offline', onOffline);
+      window.removeEventListener('online', onOnline);
       ws.current?.close();
     };
   }, []);
