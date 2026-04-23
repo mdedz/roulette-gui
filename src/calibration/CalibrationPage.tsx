@@ -5,11 +5,28 @@ import ControlPanel from './components/ControlPanel';
 import StatusPanel from './components/StatusPanel';
 import ResultViewer from './components/ResultViewer';
 import { useCalibrationStatus } from './hooks/useCalibrationStatus';
+import { BASE_URL } from './api';
 import type { ResultResponse } from './api';
 
+// derive defaults from BASE_URL env if possible
+let defaultHost = '192.168.1.100';
+let defaultPort = '8765';
+try {
+  const u = new URL(BASE_URL);
+  defaultHost = u.hostname;
+  defaultPort = u.port || (u.protocol === 'https:' ? '443' : '80');
+} catch (e) {
+  // ignore
+}
+
 export default function CalibrationPage() {
-  const [host, setHost] = useState(() => localStorage.getItem('calibration_host') ?? '127.0.0.1');
-  const [port, setPort] = useState(() => localStorage.getItem('calibration_port') ?? '8765');
+  const [host, setHost] = useState(() => {
+    const stored = localStorage.getItem('calibration_host');
+    if (!stored) return defaultHost;
+    if (stored === '127.0.0.1' || stored === 'localhost') return defaultHost;
+    return stored;
+  });
+  const [port, setPort] = useState(() => localStorage.getItem('calibration_port') ?? defaultPort);
   const baseUrl = useMemo(() => `http://${host}:${port}`, [host, port]);
 
   const { status, lastError, startPolling, stopPolling, refresh, isPolling } = useCalibrationStatus(() => baseUrl);

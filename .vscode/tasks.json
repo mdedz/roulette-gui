@@ -1,0 +1,11 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+      {
+          "label": "sync-remote",
+          "type": "shell",
+          "command": "rsync -azP --exclude='.git/' /home/corpse/Work/roulette-gui/ root@100.109.227.119:~/roulette-gui/",
+          "problemMatcher": []
+      }
+    ]
+  }

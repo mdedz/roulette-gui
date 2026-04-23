@@ -52,6 +52,9 @@ export type ResultResponse = { ok: false; message: string } | { ok: true; saved:
 
 const DEFAULT_TIMEOUT = 7000;
 
+// Default base URL — can be overridden by env var REACT_APP_API_URL
+export const BASE_URL = process.env.REACT_APP_API_URL || 'http://100.109.227.119:8765';
+
 async function fetchWithTimeout(input: string, init: RequestInit = {}, timeout = DEFAULT_TIMEOUT): Promise<Response> {
   const controller = new AbortController();
   const id = setTimeout(() => controller.abort(), timeout);
@@ -72,27 +75,33 @@ async function parseJsonSafe<T = any>(resp: Response): Promise<T> {
   }
 }
 
-export async function postStart(baseUrl: string, timeout = DEFAULT_TIMEOUT): Promise<StartResponse> {
-  const url = `${baseUrl.replace(/\/$/, '')}/api/calibration/start`;
-  const resp = await fetchWithTimeout(url, { method: 'POST' }, timeout);
-  return await parseJsonSafe<StartResponse>(resp);
+async function apiCall<T = any>(path: string, init: RequestInit = {}, timeout = DEFAULT_TIMEOUT, baseUrl?: string): Promise<T> {
+  const base = (baseUrl || BASE_URL).replace(/\/$/, '');
+  const url = `${base}${path}`;
+  try {
+    const resp = await fetchWithTimeout(url, init, timeout);
+    // Server returns 200 even for errors; parse JSON and let callers inspect `ok` field.
+    const json = await parseJsonSafe<T>(resp);
+    return json;
+  } catch (err) {
+    // Treat any fetch/parse/abort error as backend unreachable per requirements.
+    throw new Error('Backend not reachable');
+  }
 }
 
-export async function postStop(baseUrl: string, timeout = DEFAULT_TIMEOUT): Promise<StopResponse> {
-  const url = `${baseUrl.replace(/\/$/, '')}/api/calibration/stop`;
-  const resp = await fetchWithTimeout(url, { method: 'POST' }, timeout);
-  return await parseJsonSafe<StopResponse>(resp);
+export async function postStart(baseUrl?: string, timeout = DEFAULT_TIMEOUT): Promise<StartResponse> {
+  return await apiCall<StartResponse>('/api/calibration/start', { method: 'POST' }, timeout, baseUrl);
 }
 
-export async function getStatus(baseUrl: string, timeout = DEFAULT_TIMEOUT): Promise<StatusResponse> {
-  const url = `${baseUrl.replace(/\/$/, '')}/api/calibration/status`;
-  const resp = await fetchWithTimeout(url, { method: 'GET' }, timeout);
-  return await parseJsonSafe<StatusResponse>(resp);
+export async function postStop(baseUrl?: string, timeout = DEFAULT_TIMEOUT): Promise<StopResponse> {
+  return await apiCall<StopResponse>('/api/calibration/stop', { method: 'POST' }, timeout, baseUrl);
 }
 
-export async function getResult(baseUrl: string, timeout = DEFAULT_TIMEOUT): Promise<ResultResponse> {
-  const url = `${baseUrl.replace(/\/$/, '')}/api/calibration/result`;
-  const resp = await fetchWithTimeout(url, { method: 'GET' }, timeout);
-  return await parseJsonSafe<ResultResponse>(resp);
+export async function getStatus(baseUrl?: string, timeout = DEFAULT_TIMEOUT): Promise<StatusResponse> {
+  return await apiCall<StatusResponse>('/api/calibration/status', { method: 'GET' }, timeout, baseUrl);
+}
+
+export async function getResult(baseUrl?: string, timeout = DEFAULT_TIMEOUT): Promise<ResultResponse> {
+  return await apiCall<ResultResponse>('/api/calibration/result', { method: 'GET' }, timeout, baseUrl);
 }
 
