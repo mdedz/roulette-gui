@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import StreamViewer from './components/StreamViewer';
 import ControlPanel from './components/ControlPanel';
 import StatusPanel from './components/StatusPanel';
@@ -16,6 +16,11 @@ export default function CalibrationPage() {
   const { status, lastError, startPolling, refresh } = useCalibrationStatus(() => baseUrl);
 
   const onStarted = useCallback(() => {
+    startPolling();
+  }, [startPolling]);
+
+  // Always keep polling the calibration status while this page is mounted.
+  useEffect(() => {
     startPolling();
   }, [startPolling]);
 

@@ -44,7 +44,9 @@ export function useCalibrationStatus(getBaseUrl: () => string): HookReturn {
   const fetchOnce = useCallback(async () => {
     try {
       const url = getBaseUrl();
+      console.log('[calib-hook] fetchOnce requesting', url);
       const res = await getStatus(url);
+      console.log('[calib-hook] fetchOnce received', { ok: (res as any)?.ok, running: (res as any)?.running });
       if (!isMounted.current) return;
       setStatus(res);
       setLastError(null);
@@ -66,7 +68,9 @@ export function useCalibrationStatus(getBaseUrl: () => string): HookReturn {
     if (!pollingRef.current) return;
     try {
       const url = getBaseUrl();
+      console.log('[calib-hook] loop requesting', url);
       const res = await getStatus(url);
+      console.log('[calib-hook] loop received', { ok: (res as any)?.ok, running: (res as any)?.running });
       if (!isMounted.current) return;
       setStatus(res);
       setLastError(null);
@@ -88,6 +92,7 @@ export function useCalibrationStatus(getBaseUrl: () => string): HookReturn {
   const startPolling = useCallback(() => {
     if (pollingRef.current) return;
     pollingRef.current = true;
+    console.log('[calib-hook] startPolling');
     // immediate fetch then start loop
     (async () => {
       try {
@@ -101,6 +106,7 @@ export function useCalibrationStatus(getBaseUrl: () => string): HookReturn {
 
   const stopPolling = useCallback(() => {
     pollingRef.current = false;
+    console.log('[calib-hook] stopPolling');
     clearTimer();
   }, []);
 
