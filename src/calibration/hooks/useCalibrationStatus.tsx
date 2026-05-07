@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { getStatus, type StatusResponse } from '../api';
+import type { RuntimeStatus } from '../useCalibrationStatus';
 
 type HookReturn = {
   status: StatusResponse | null;
+  runtimeStatus: RuntimeStatus | null;
   lastError: string | null;
   isPolling: boolean;
   startPolling: () => void;
@@ -12,12 +14,15 @@ type HookReturn = {
 
 export function useCalibrationStatus(getBaseUrl: () => string): HookReturn {
   const [status, setStatus] = useState<StatusResponse | null>(null);
+  const [runtimeStatus, setRuntimeStatus] = useState<RuntimeStatus | null>(null);
   const [lastError, setLastError] = useState<string | null>(null);
   const pollingRef = useRef<boolean>(false);
   const timerRef = useRef<number | null>(null);
   const backoffRef = useRef<number>(1000);
   const baseIntervalRef = useRef<number>(7000);
   const isMounted = useRef(true);
+  const runtimeTimerRef = useRef<number | null>(null);
+  const RUNTIME_POLL_INTERVAL = 10000;
 
   useEffect(() => {
     return () => {
@@ -47,6 +52,7 @@ export function useCalibrationStatus(getBaseUrl: () => string): HookReturn {
       console.log('[calib-hook] fetchOnce requesting', url);
       const res = await getStatus(url);
       console.log('[calib-hook] fetchOnce received', { ok: (res as any)?.ok, running: (res as any)?.running });
+      // runtime status is polled independently (to avoid overloading runtime when main poll is fast)
       if (!isMounted.current) return;
       setStatus(res);
       setLastError(null);
@@ -64,6 +70,38 @@ export function useCalibrationStatus(getBaseUrl: () => string): HookReturn {
     return;
   }, [getBaseUrl]);
 
+  const fetchRuntimeOnce = useCallback(async () => {
+    try {
+      const url = getBaseUrl();
+      const runtimeUrl = `${url.replace(/\/$/, '')}/api/runtime/calibration_status`;
+      console.log('[calib-hook] fetchRuntimeOnce requesting runtime at', runtimeUrl);
+      const r = await fetch(runtimeUrl, { method: 'GET', mode: 'cors', cache: 'no-store' });
+      const runtimeJson = await r.json().catch(() => null);
+      console.log('[calib-hook] fetchRuntimeOnce received', runtimeJson);
+      if (!isMounted.current) return;
+      setRuntimeStatus((runtimeJson && runtimeJson.runtime_status) || null);
+    } catch (e) {
+      console.log('[calib-hook] fetchRuntimeOnce error', e);
+      if (!isMounted.current) return;
+      setRuntimeStatus(null);
+    }
+  }, [getBaseUrl]);
+
+  // start independent runtime polling on mount
+  useEffect(() => {
+    runtimeTimerRef.current = window.setInterval(() => {
+      fetchRuntimeOnce().catch(() => {});
+    }, RUNTIME_POLL_INTERVAL) as unknown as number;
+    // fetch immediately once
+    fetchRuntimeOnce().catch(() => {});
+    return () => {
+      if (runtimeTimerRef.current) {
+        window.clearInterval(runtimeTimerRef.current);
+        runtimeTimerRef.current = null;
+      }
+    };
+  }, [fetchRuntimeOnce]);
+
   const loop = useCallback(async () => {
     if (!pollingRef.current) return;
     try {
@@ -71,6 +109,7 @@ export function useCalibrationStatus(getBaseUrl: () => string): HookReturn {
       console.log('[calib-hook] loop requesting', url);
       const res = await getStatus(url);
       console.log('[calib-hook] loop received', { ok: (res as any)?.ok, running: (res as any)?.running });
+      // runtime status is polled independently (see fetchRuntimeOnce)
       if (!isMounted.current) return;
       setStatus(res);
       setLastError(null);
@@ -116,6 +155,7 @@ export function useCalibrationStatus(getBaseUrl: () => string): HookReturn {
 
   return {
     status,
+    runtimeStatus,
     lastError,
     isPolling: pollingRef.current,
     startPolling,

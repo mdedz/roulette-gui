@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import StreamViewer from './components/StreamViewer';
 import ControlPanel from './components/ControlPanel';
 import StatusPanel from './components/StatusPanel';
@@ -13,7 +13,7 @@ export default function CalibrationPage() {
 
   const baseUrl = BASE_URL;
 
-  const { status, lastError, startPolling, refresh } = useCalibrationStatus(() => baseUrl);
+  const { status, runtimeStatus, lastError, startPolling, refresh } = useCalibrationStatus(() => baseUrl);
 
   const onStarted = useCallback(() => {
     startPolling();
@@ -23,6 +23,28 @@ export default function CalibrationPage() {
   useEffect(() => {
     startPolling();
   }, [startPolling]);
+
+  // Notify user if runtime reports low-quality calibration.
+  const prevRuntimeRef = useRef<typeof runtimeStatus | null>(null);
+  useEffect(() => {
+    const rt = runtimeStatus;
+    if (!rt) {
+      prevRuntimeRef.current = rt;
+      return;
+    }
+    const score = typeof rt.score === 'number' ? rt.score : 0;
+    const isBad = rt.status !== 'VALID' || score < 0.8;
+    const prev = prevRuntimeRef.current;
+    const prevBad = prev ? prev.status !== 'VALID' || (typeof prev.score === 'number' ? prev.score : 0) < 0.8 : false;
+
+    if (isBad && !prevBad) {
+      setMessage('Calibration quality low — please recalibrate');
+    } else if (!isBad && prevBad) {
+      setMessage('Calibration quality restored');
+    }
+
+    prevRuntimeRef.current = rt;
+  }, [runtimeStatus, setMessage]);
 
   const onStopped = useCallback(() => {
     refresh();
@@ -49,9 +71,25 @@ export default function CalibrationPage() {
     URL.revokeObjectURL(url);
   }, [result]);
 
+  // derive display state for runtime quality indicator
+  const quality = (() => {
+    if (!runtimeStatus) return { text: 'Unknown', color: 'bg-zinc-700', hint: 'No data' };
+    const score = typeof runtimeStatus.score === 'number' ? runtimeStatus.score : 0;
+    if (runtimeStatus.status === 'INVALID' || score < 0.6) return { text: 'Poor', color: 'bg-rose-600', hint: `score=${score.toFixed(2)}` };
+    if (runtimeStatus.status === 'SUSPECT' || score < 0.8) return { text: 'Fair', color: 'bg-amber-500', hint: `score=${score.toFixed(2)}` };
+    return { text: 'Good', color: 'bg-emerald-600', hint: `score=${score.toFixed(2)}` };
+  })();
+
   return (
     <div className="min-h-screen w-full bg-[radial-gradient(circle_at_top,rgba(16,185,129,0.08),transparent_35%),linear-gradient(180deg,#09090b_0%,#050505_45%,#09090b_100%)] text-zinc-100">
       <div className="mx-auto w-full max-w-7xl px-4 py-6 sm:px-6 lg:px-8 space-y-8">
+        <div className="flex items-center justify-end">
+          <div className={`inline-flex items-center gap-3 rounded-full px-3 py-2 text-sm font-semibold ${quality.color} text-black`}>
+            <span className="uppercase text-xs opacity-80">Calibration</span>
+            <span className="font-mono">{quality.text}</span>
+            <span className="text-[11px] opacity-70">({quality.hint})</span>
+          </div>
+        </div>
 
         <div className="grid grid-cols-1 gap-8 xl:grid-cols-[minmax(0,1.7fr)_minmax(360px,0.9fr)]">
 
