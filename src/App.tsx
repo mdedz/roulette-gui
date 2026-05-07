@@ -25,6 +25,12 @@ const getNumberBorderColor = (num: number) => {
 export default function App() {
   const [spins, setSpins] = useState<number[]>([]);
   const [connected, setConnected] = useState(false);
+  const [trackingHealth, setTrackingHealth] = useState<{
+    status: 'HEALTHY' | 'WARNING' | 'CRITICAL';
+    tracking_health_score?: number;
+    last_update_ts?: string;
+    [key: string]: any;
+  } | null>(null);
   const [inputNumber, setInputNumber] = useState<string>('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showCalibration, setShowCalibration] = useState(false);
@@ -106,6 +112,39 @@ export default function App() {
     };
   }, []);
 
+  // Poll tracking health endpoint every 2s
+  useEffect(() => {
+    let mounted = true;
+    let intervalId: number | undefined;
+
+    const fetchHealth = async () => {
+      try {
+        const res = await fetch('/api/tracking/health', { cache: 'no-store' });
+        if (!res.ok) throw new Error(`status ${res.status}`);
+        const json = await res.json();
+        if (!mounted) return;
+        if (json && json.status) {
+          setTrackingHealth(json);
+        } else {
+          setTrackingHealth((prev) => prev ?? { status: 'CRITICAL' });
+        }
+      } catch (err) {
+        console.warn('[HEALTH] fetch failed', err);
+        if (!mounted) return;
+        setTrackingHealth((prev) => ({ ...(prev ?? {}), status: 'CRITICAL' }));
+      }
+    };
+
+    // initial fetch
+    fetchHealth();
+    intervalId = window.setInterval(fetchHealth, 2000);
+
+    return () => {
+      mounted = false;
+      if (intervalId) window.clearInterval(intervalId);
+    };
+  }, []);
+
   const submitSpin = useCallback(async (numToSubmit?: number) => {
     const parsed = numToSubmit !== undefined ? numToSubmit : Number.parseInt(inputNumber, 10);
     if (Number.isNaN(parsed) || parsed < 0 || parsed > 36) return;
@@ -138,28 +177,43 @@ export default function App() {
   }, [latest]);
 
   return (
-    <div className="min-h-screen bg-[radial-gradient(circle_at_top,rgba(16,185,129,0.14),transparent_30%),radial-gradient(circle_at_bottom,rgba(245,158,11,0.10),transparent_28%),linear-gradient(180deg,#050505_0%,#09090b_35%,#050505_100%)] text-zinc-100">
-      <header className="sticky top-0 z-50 border-b border-zinc-800/70 bg-black/50 backdrop-blur-2xl">
-        <div className="mx-auto flex w-full max-w-7xl items-center justify-between gap-4 px-4 py-4 sm:px-6 lg:px-8">
-          <div className="flex items-center gap-3">
-            <div className={cn('h-3 w-3 rounded-full shadow-[0_0_20px_currentColor]', connected ? 'bg-emerald-500' : 'bg-rose-500')} />
-            <div>
-              <div className="text-[10px] font-bold uppercase tracking-[0.35em] text-zinc-500">
-                {connected ? 'Live' : 'Connecting'}
-              </div>
-              <div className="text-sm text-zinc-300">Casino monitor</div>
-            </div>
+    <div className="min-h-screen bg-black text-white">
+      <header className="w-full">
+        <div className="mx-auto flex w-full max-w-7xl items-center justify-between px-6 py-4">
+          <div>
+            <div className="text-2xl font-bold">Casino Monitor</div>
+            <div className="text-sm text-zinc-400">{connected ? 'Live' : 'Connecting'}</div>
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-4">
+            {/* Tracking health badge */}
+            <div className="flex items-center gap-2">
+              <div
+                className={`px-3 py-1 rounded-md font-semibold text-sm flex items-center gap-2 ${
+                  trackingHealth?.status === 'HEALTHY'
+                    ? 'bg-emerald-600 text-black'
+                    : trackingHealth?.status === 'WARNING'
+                    ? 'bg-amber-400 text-black'
+                    : trackingHealth?.status === 'CRITICAL'
+                    ? 'bg-rose-600 text-black'
+                    : 'bg-zinc-700 text-zinc-200'
+                }`}
+              >
+                <span className="uppercase">
+                  {trackingHealth?.status ?? 'UNKNOWN'}
+                </span>
+                {trackingHealth?.tracking_health_score !== undefined && (
+                  <span className="text-xs opacity-80">({Math.round(trackingHealth.tracking_health_score)})</span>
+                )}
+              </div>
+            </div>
             <button
               onClick={() => setShowCalibration((s) => !s)}
-              className="rounded-full border border-zinc-700 bg-zinc-900/80 px-6 py-3 text-sm font-bold text-zinc-100 transition hover:border-emerald-500/50 hover:bg-zinc-800 active:scale-[0.98]"
+              className="rounded-full bg-emerald-600 px-6 py-3 text-lg font-bold text-black"
             >
-              {showCalibration ? 'Back to Roulette' : 'Open Calibration'}
+              {showCalibration ? 'Back' : 'Calibration'}
             </button>
-
-            <div className="hidden items-center gap-3 rounded-full border border-zinc-800 bg-zinc-950/80 px-4 py-2 md:flex">
+            <div className="flex items-center gap-2">
               <input
                 type="number"
                 min="0"
@@ -168,14 +222,13 @@ export default function App() {
                 onChange={(e) => setInputNumber(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && submitSpin()}
                 placeholder="0–36"
-                className="w-24 bg-transparent text-center text-base font-semibold text-zinc-100 outline-none placeholder:text-zinc-600"
+                className="w-20 bg-transparent text-center text-lg font-semibold outline-none"
               />
               <button
                 onClick={() => submitSpin()}
                 disabled={isSubmitting || inputNumber === ''}
-                className="inline-flex items-center gap-2 rounded-full bg-emerald-500 px-5 py-3 text-sm font-black text-black transition hover:bg-emerald-400 disabled:cursor-not-allowed disabled:opacity-40"
+                className="rounded-full bg-emerald-500 px-6 py-3 text-lg font-black text-black disabled:opacity-50"
               >
-                {isSubmitting ? <div className="h-4 w-4 animate-spin rounded-full border-2 border-black/20 border-t-black" /> : <Send className="h-4 w-4" />}
                 Add
               </button>
             </div>
@@ -183,151 +236,59 @@ export default function App() {
         </div>
       </header>
 
-      <main className="mx-auto w-full max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
+      <main className="mx-auto w-full max-w-7xl px-6 py-8">
         {showCalibration ? (
-          <div className="rounded-[2.5rem] border border-zinc-800/70 bg-black/25 p-2 sm:p-4">
-            <CalibrationPage />
-          </div>
+          <CalibrationPage />
         ) : (
-          <div className="grid items-start gap-8 xl:grid-cols-[minmax(0,1.7fr)_minmax(360px,0.9fr)]">
-            <section className="flex flex-col items-center justify-center rounded-[2.5rem] border border-zinc-800/70 bg-black/25 p-6 shadow-[0_20px_80px_rgba(0,0,0,0.45)] backdrop-blur-xl sm:p-8 lg:p-10">
-              <div className="mb-6 flex items-center gap-2 text-center">
-                <Sparkles className="h-5 w-5 text-emerald-400" />
-                <span className="text-[11px] font-bold uppercase tracking-[0.35em] text-zinc-500">
-                  Latest result
-                </span>
-              </div>
+          <div className="flex flex-col lg:flex-row gap-8">
+            <section className="flex-1 flex flex-col items-center justify-center">
+              {latest !== undefined ? (
+                <div className="flex flex-col items-center gap-6 text-center">
+                  <div
+                    className={cn('flex items-center justify-center rounded-full font-black', getNumberColor(latest), getNumberBorderColor(latest))}
+                    style={{
+                      width: 'min(72vw, 720px)',
+                      height: 'min(72vw, 720px)',
+                      fontSize: 'min(18vw, 140px)',
+                      lineHeight: 1,
+                      borderWidth: 6,
+                    }}
+                  >
+                    {latest}
+                  </div>
 
-              <div className="w-full flex-1">
-                <AnimatePresence mode="wait">
-                  {latest !== undefined ? (
-                    <motion.div
-                      key={latest}
-                      initial={{ scale: 0.86, opacity: 0, y: 18 }}
-                      animate={{ scale: 1, opacity: 1, y: 0 }}
-                      exit={{ scale: 1.03, opacity: 0, y: -10 }}
-                      transition={{ type: 'spring', stiffness: 240, damping: 20 }}
-                      className="flex flex-col items-center gap-6 text-center"
-                    >
-                      <div
-                        className={cn(
-                          'flex items-center justify-center rounded-full border-4 font-black uppercase shadow-[0_30px_100px_rgba(0,0,0,0.75)]',
-                          getNumberColor(latest),
-                          getNumberBorderColor(latest)
-                        )}
-                        style={{
-                          width: 'min(72vw, 920px)',
-                          height: 'min(72vw, 920px)',
-                          fontSize: 'min(18vw, 170px)',
-                          lineHeight: 1,
-                        }}
-                      >
-                        {latest}
-                      </div>
-
-                      <div className="space-y-2">
-                        <div className="text-2xl font-black tracking-tight sm:text-3xl lg:text-4xl">
-                          {latestInfo?.color} · {latestInfo?.parity}
-                        </div>
-                        <div className="text-sm uppercase tracking-[0.3em] text-zinc-500">
-                          Huge centered display for presentation
-                        </div>
-                      </div>
-                    </motion.div>
-                  ) : (
-                    <motion.div
-                      key="empty"
-                      initial={{ opacity: 0 }}
-                      animate={{ opacity: 1 }}
-                      className="flex flex-col items-center justify-center gap-5 rounded-[2.5rem] border-2 border-dashed border-zinc-800 bg-black/25 py-24 text-center"
-                      style={{ minHeight: 'min(72vw, 920px)' }}
-                    >
-                      <Hash className="h-16 w-16 text-zinc-700" />
-                      <div>
-                        <p className="text-xl font-bold text-zinc-300">Waiting for first spin</p>
-                        <p className="mt-2 text-sm text-zinc-600">Пока список пустой, большой круг появится после первого значения</p>
-                      </div>
-                    </motion.div>
-                  )}
-                </AnimatePresence>
-              </div>
-            </section>
-
-            <aside className="flex flex-col rounded-[2.5rem] border border-zinc-800/70 bg-zinc-950/60 shadow-[0_20px_80px_rgba(0,0,0,0.45)] backdrop-blur-xl">
-              <div className="flex items-center justify-between border-b border-zinc-800/70 px-6 py-5">
-                <div className="flex items-center gap-3">
-                  <History className="h-5 w-5 text-zinc-400" />
-                  <div>
-                    <div className="text-[10px] font-bold uppercase tracking-[0.35em] text-zinc-500">
-                      History
-                    </div>
-                    <div className="text-sm text-zinc-300">{spins.length} spins</div>
+                  <div className="text-3xl font-black">
+                    {latestInfo?.color} · {latestInfo?.parity}
                   </div>
                 </div>
-                <div className="text-xs font-mono text-zinc-500">Live feed</div>
-              </div>
-
-              <div className="custom-scrollbar max-h-[calc(100vh-12rem)] overflow-y-auto p-4 sm:p-5">
-                <div className="space-y-3">
-                  <AnimatePresence initial={false}>
-                    {spins.map((num, idx) => (
-                      <motion.div
-                        key={`${idx}-${num}`}
-                        initial={{ opacity: 0, y: -10 }}
-                        animate={{ opacity: idx === 0 ? 1 : 0.82, y: 0 }}
-                        exit={{ opacity: 0, scale: 0.96 }}
-                        className={cn(
-                          'flex items-center justify-between rounded-3xl border px-5 py-4 transition',
-                          idx === 0
-                            ? 'border-zinc-600/60 bg-zinc-800/70'
-                            : 'border-zinc-800/40 bg-zinc-900/40'
-                        )}
-                      >
-                        <div className="flex items-center gap-4">
-                          <div
-                            className={cn(
-                              'flex items-center justify-center rounded-full border-2 font-black shadow-lg',
-                              idx === 0 ? 'h-14 w-14 text-xl' : 'h-12 w-12 text-lg',
-                              getNumberColor(num),
-                              getNumberBorderColor(num)
-                            )}
-                          >
-                            {num}
-                          </div>
-                          <div>
-                            <div className={cn('font-bold', idx === 0 ? 'text-base text-zinc-100' : 'text-sm text-zinc-300')}>
-                              {num === 0 ? 'Zero' : RED_NUMBERS.includes(num) ? 'Red' : 'Black'}
-                            </div>
-                            <div className="text-xs uppercase tracking-[0.25em] text-zinc-500">
-                              {num === 0 ? 'Neutral' : num % 2 === 0 ? 'Even' : 'Odd'}
-                            </div>
-                          </div>
-                        </div>
-
-                        <div className="text-xs font-mono text-zinc-600">#{spins.length - idx}</div>
-                      </motion.div>
-                    ))}
-                  </AnimatePresence>
-
-                  {spins.length === 0 && (
-                    <div className="flex min-h-64 flex-col items-center justify-center rounded-3xl border border-dashed border-zinc-800/60 bg-black/20 py-12 text-center opacity-40">
-                      <Hash className="mb-4 h-14 w-14" />
-                      <p className="text-lg font-medium">Waiting for first spin...</p>
-                    </div>
-                  )}
+              ) : (
+                <div className="flex flex-col items-center justify-center gap-4 py-24 text-center">
+                  <div className="text-3xl font-bold text-zinc-500">Waiting for first spin</div>
                 </div>
+              )}
+            </section>
+
+            <aside className="w-full lg:w-96">
+              <div className="text-xl font-bold mb-4">History</div>
+              <div className="grid grid-cols-3 gap-3">
+                {spins.slice(0, 30).map((num, idx) => (
+                  <div
+                    key={`${idx}-${num}`}
+                    className={`flex items-center justify-center rounded-lg p-4 text-2xl font-bold ${getNumberColor(num)} ${getNumberBorderColor(num)}`}
+                  >
+                    {num}
+                  </div>
+                ))}
+                {spins.length === 0 && (
+                  <div className="col-span-3 text-center text-lg text-zinc-500 py-12 rounded-lg border border-dashed">
+                    No spins yet
+                  </div>
+                )}
               </div>
             </aside>
           </div>
         )}
       </main>
-
-      <style dangerouslySetInnerHTML={{ __html: `
-        .custom-scrollbar::-webkit-scrollbar { width: 8px; }
-        .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
-        .custom-scrollbar::-webkit-scrollbar-thumb { background: #27272a; border-radius: 9999px; }
-        .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #3f3f46; }
-      `}} />
     </div>
   );
 }

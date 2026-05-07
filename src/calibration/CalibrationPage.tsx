@@ -1,15 +1,13 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import StreamViewer from './components/StreamViewer';
-import ControlPanel from './components/ControlPanel';
-import StatusPanel from './components/StatusPanel';
-import ResultViewer from './components/ResultViewer';
 import { useCalibrationStatus } from './hooks/useCalibrationStatus';
-import { BASE_URL } from './api';
+import { BASE_URL, postStart, postStop } from './api';
 import type { ResultResponse } from './api';
 
 export default function CalibrationPage() {
   const [result, setResult] = useState<ResultResponse | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
 
   const baseUrl = BASE_URL;
 
@@ -81,53 +79,66 @@ export default function CalibrationPage() {
   })();
 
   return (
-    <div className="min-h-screen w-full bg-[radial-gradient(circle_at_top,rgba(16,185,129,0.08),transparent_35%),linear-gradient(180deg,#09090b_0%,#050505_45%,#09090b_100%)] text-zinc-100">
-      <div className="mx-auto w-full max-w-7xl px-4 py-6 sm:px-6 lg:px-8 space-y-8">
-        <div className="flex items-center justify-end">
-          <div className={`inline-flex items-center gap-3 rounded-full px-3 py-2 text-sm font-semibold ${quality.color} text-black`}>
-            <span className="uppercase text-xs opacity-80">Calibration</span>
-            <span className="font-mono">{quality.text}</span>
-            <span className="text-[11px] opacity-70">({quality.hint})</span>
-          </div>
+    <div className="min-h-screen w-full bg-black text-white">
+      <div className="mx-auto w-full max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
+        {/* Main stream area */}
+        <div className="mb-6">
+          <StreamViewer baseUrl={baseUrl} />
         </div>
 
-        <div className="grid grid-cols-1 gap-8 xl:grid-cols-[minmax(0,1.7fr)_minmax(360px,0.9fr)]">
-
-          <div className="space-y-8">
-            <StreamViewer baseUrl={baseUrl} />
+        {/* Minimal controls and big progress */}
+        <div className="flex flex-col items-center gap-6">
+          <div className="w-full max-w-3xl">
+            <div className="text-center text-4xl font-bold mb-4">Калибровка</div>
+            <div className="w-full bg-zinc-800 rounded-full h-8 overflow-hidden">
+              <div
+                style={{ width: `${Math.round((status?.progress?.coverage_ratio ?? 0) * 100)}%` }}
+                className="h-8 bg-emerald-500 transition-all"
+              />
+            </div>
+            <div className="text-center text-3xl font-mono mt-3">
+              {Math.round((status?.progress?.coverage_ratio ?? 0) * 100)}%
+            </div>
           </div>
 
-          <aside className="space-y-8 xl:sticky xl:top-6 self-start">
+          <div className="flex gap-6 items-center">
+            <button
+              onClick={async () => {
+                if (loading) return;
+                setLoading(true);
+                try {
+                  if (status?.running) {
+                    await postStop(baseUrl);
+                    setMessage('Остановлено');
+                    refresh();
+                  } else {
+                    const res = await postStart(baseUrl);
+                    setMessage(res.status?.message ?? 'Старт');
+                    startPolling();
+                  }
+                } catch (e: any) {
+                  setMessage(String(e?.message ?? e));
+                } finally {
+                  setLoading(false);
+                }
+              }}
+              className="bg-emerald-600 px-10 py-4 rounded-full text-2xl font-bold shadow-lg"
+            >
+              {loading ? '...' : status?.running ? 'STOP' : 'START'}
+            </button>
+          </div>
 
-            <div className="rounded-[2rem] border border-zinc-800/70 bg-zinc-950/60 p-5">
-              <ControlPanel
-                baseUrl={baseUrl}
-                statusRunning={!!status?.running}
-                onStarted={onStarted}
-                onStopped={onStopped}
-                onResult={handleResult}
-                setMessage={setMessage}
-              />
+          {message && (
+            <div className="text-xl text-rose-400 font-semibold mt-4">
+              {message}
             </div>
+          )}
 
-            <div className="rounded-[2rem] border border-zinc-800/70 bg-zinc-950/60 p-5">
-              <StatusPanel status={status} lastError={lastError} />
+          {lastError && (
+            <div className="text-lg text-rose-400 font-mono mt-2">
+              Ошибка: {lastError}
             </div>
-
-            <div className="rounded-[2rem] border border-zinc-800/70 bg-zinc-950/60 p-5">
-              <ResultViewer
-                result={result?.ok ? (result as any).calibration : result}
-                onDownload={handleDownload}
-              />
-            </div>
-
-            {message && (
-              <div className="rounded-[1.5rem] border border-emerald-500/30 bg-emerald-500/10 px-5 py-4 text-sm text-emerald-100">
-                {message}
-              </div>
-            )}
-
-          </aside>
+          )}
         </div>
       </div>
     </div>
