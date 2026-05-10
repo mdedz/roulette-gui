@@ -19,6 +19,17 @@ export type StopResponse = {
   };
 };
 
+export type PredictionStartResponse = {
+  ok: boolean;
+  pid?: number;
+  command?: string;
+  error?: string;
+};
+
+export type PredictionStopResponse = {
+  ok: boolean;
+};
+
 export type StatusResponse = {
   ok: boolean;
   lifecycle_state: string;
@@ -103,5 +114,13 @@ export async function getStatus(baseUrl?: string, timeout = DEFAULT_TIMEOUT): Pr
 
 export async function getResult(baseUrl?: string, timeout = DEFAULT_TIMEOUT): Promise<ResultResponse> {
   return await apiCall<ResultResponse>('/api/calibration/result', { method: 'GET' }, timeout, baseUrl);
+}
+
+export async function postPredictionStart(baseUrl?: string, timeout = DEFAULT_TIMEOUT): Promise<PredictionStartResponse> {
+  return await apiCall<PredictionStartResponse>('/api/prediction/start', { method: 'POST' }, timeout, baseUrl);
+}
+
+export async function postPredictionStop(baseUrl?: string, timeout = DEFAULT_TIMEOUT): Promise<PredictionStopResponse> {
+  return await apiCall<PredictionStopResponse>('/api/prediction/stop', { method: 'POST' }, timeout, baseUrl);
 }
 

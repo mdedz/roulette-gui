@@ -1,13 +1,14 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import StreamViewer from './components/StreamViewer';
 import { useCalibrationStatus } from './hooks/useCalibrationStatus';
-import { BASE_URL, postStart, postStop } from './api';
+import { BASE_URL, postStart, postStop, postPredictionStart, postPredictionStop } from './api';
 import type { ResultResponse } from './api';
 
 export default function CalibrationPage() {
   const [result, setResult] = useState<ResultResponse | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [predLoading, setPredLoading] = useState(false);
 
   const baseUrl = BASE_URL;
 
@@ -126,6 +127,51 @@ export default function CalibrationPage() {
             >
               {loading ? '...' : status?.running ? 'STOP' : 'START'}
             </button>
+            <div className="flex items-center gap-3">
+              <button
+                onClick={async () => {
+                  if (predLoading) return;
+                  setPredLoading(true);
+                  try {
+                    const res = await postPredictionStart(baseUrl);
+                    if (res?.ok) {
+                      setMessage(`Prediction started pid=${res.pid ?? 'n/a'}`);
+                    } else {
+                      setMessage(`Prediction start error: ${res?.error ?? 'unknown'}`);
+                    }
+                  } catch (e: any) {
+                    setMessage(String(e?.message ?? e));
+                  } finally {
+                    setPredLoading(false);
+                  }
+                }}
+                className="bg-indigo-600 px-4 py-2 rounded-full text-lg font-semibold shadow"
+              >
+                {predLoading ? '...' : 'Start Prediction'}
+              </button>
+
+              <button
+                onClick={async () => {
+                  if (predLoading) return;
+                  setPredLoading(true);
+                  try {
+                    const res = await postPredictionStop(baseUrl);
+                    if (res?.ok) {
+                      setMessage('Prediction stopped');
+                    } else {
+                      setMessage('Error stopping prediction');
+                    }
+                  } catch (e: any) {
+                    setMessage(String(e?.message ?? e));
+                  } finally {
+                    setPredLoading(false);
+                  }
+                }}
+                className="bg-zinc-700 px-4 py-2 rounded-full text-lg font-semibold shadow"
+              >
+                Stop Prediction
+              </button>
+            </div>
           </div>
 
           {message && (

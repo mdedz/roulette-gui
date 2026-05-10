@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import CalibrationPage from './calibration/CalibrationPage';
+import { BASE_URL } from './calibration/api';
 import { motion, AnimatePresence } from 'motion/react';
 import { History, Hash, Send, Sparkles } from 'lucide-react';
 import { clsx, type ClassValue } from 'clsx';
@@ -119,13 +120,31 @@ export default function App() {
 
     const fetchHealth = async () => {
       try {
-        const res = await fetch('/api/tracking/health', { cache: 'no-store' });
+        const base = (BASE_URL || '').replace(/\/$/, '');
+        const res = await fetch(`${base}/api/tracking/health`, { cache: 'no-store' });
         if (!res.ok) throw new Error(`status ${res.status}`);
-        const json = await res.json();
+        // Read as text first — some backends may return non-JSON (empty body or plain text).
+        const text = await res.text();
+        let json: any = null;
+        if (text) {
+          try {
+            json = JSON.parse(text);
+          } catch (parseErr) {
+            // If parsing fails, treat as unhealthy but include the raw body for debugging.
+            console.warn('[HEALTH] invalid JSON body from health endpoint', { body: text, parseErr });
+          }
+        }
         if (!mounted) return;
         if (json && json.status) {
           setTrackingHealth(json);
         } else {
+          // If we couldn't parse JSON or it doesn't have a status field, log the response
+          // (status + body) to help debugging and mark as CRITICAL.
+          console.warn('[HEALTH] marking CRITICAL — invalid/missing status in response', {
+            status: res.status,
+            ok: res.ok,
+            body: text,
+          });
           setTrackingHealth((prev) => prev ?? { status: 'CRITICAL' });
         }
       } catch (err) {

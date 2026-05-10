@@ -19,10 +19,15 @@ export function useCalibrationStatus(getBaseUrl: () => string): HookReturn {
   const pollingRef = useRef<boolean>(false);
   const timerRef = useRef<number | null>(null);
   const backoffRef = useRef<number>(1000);
-  const baseIntervalRef = useRef<number>(7000);
+  const baseIntervalRef = useRef<number>(4000);
   const isMounted = useRef(true);
   const runtimeTimerRef = useRef<number | null>(null);
-  const RUNTIME_POLL_INTERVAL = 10000;
+  const RUNTIME_POLL_INTERVAL = 4000;
+  const getBaseUrlRef = useRef(getBaseUrl);
+
+  useEffect(() => {
+    getBaseUrlRef.current = getBaseUrl;
+  }, [getBaseUrl]);
 
   useEffect(() => {
     return () => {
@@ -48,7 +53,7 @@ export function useCalibrationStatus(getBaseUrl: () => string): HookReturn {
 
   const fetchOnce = useCallback(async () => {
     try {
-      const url = getBaseUrl();
+      const url = getBaseUrlRef.current();
       console.log('[calib-hook] fetchOnce requesting', url);
       const res = await getStatus(url);
       console.log('[calib-hook] fetchOnce received', { ok: (res as any)?.ok, running: (res as any)?.running });
@@ -59,7 +64,7 @@ export function useCalibrationStatus(getBaseUrl: () => string): HookReturn {
       backoffRef.current = 1000; // reset on success
       // choose interval based on running flag
       const running = (res as any).running === true;
-      baseIntervalRef.current = running ? 500 : 7000;
+      baseIntervalRef.current = 4000;
     } catch (err: any) {
       if (!isMounted.current) return;
       setLastError(String(err?.message ?? err));
@@ -68,11 +73,11 @@ export function useCalibrationStatus(getBaseUrl: () => string): HookReturn {
       backoffRef.current = next;
     }
     return;
-  }, [getBaseUrl]);
+  }, []);
 
   const fetchRuntimeOnce = useCallback(async () => {
     try {
-      const url = getBaseUrl();
+      const url = getBaseUrlRef.current();
       const runtimeUrl = `${url.replace(/\/$/, '')}/api/runtime/calibration_status`;
       console.log('[calib-hook] fetchRuntimeOnce requesting runtime at', runtimeUrl);
       const r = await fetch(runtimeUrl, { method: 'GET', mode: 'cors', cache: 'no-store' });
@@ -85,7 +90,7 @@ export function useCalibrationStatus(getBaseUrl: () => string): HookReturn {
       if (!isMounted.current) return;
       setRuntimeStatus(null);
     }
-  }, [getBaseUrl]);
+  }, []);
 
   // start independent runtime polling on mount
   useEffect(() => {
@@ -105,7 +110,7 @@ export function useCalibrationStatus(getBaseUrl: () => string): HookReturn {
   const loop = useCallback(async () => {
     if (!pollingRef.current) return;
     try {
-      const url = getBaseUrl();
+      const url = getBaseUrlRef.current();
       console.log('[calib-hook] loop requesting', url);
       const res = await getStatus(url);
       console.log('[calib-hook] loop received', { ok: (res as any)?.ok, running: (res as any)?.running });
@@ -115,7 +120,7 @@ export function useCalibrationStatus(getBaseUrl: () => string): HookReturn {
       setLastError(null);
       backoffRef.current = 1000;
       const running = (res as any).running === true;
-      const interval = running ? 500 : 7000;
+      const interval = 4000;
       baseIntervalRef.current = interval;
       // schedule next poll
       scheduleNext(interval, loop);
