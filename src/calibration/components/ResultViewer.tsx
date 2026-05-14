@@ -6,21 +6,31 @@ type Props = {
 };
 
 export default function ResultViewer({ result, onDownload }: Props) {
+  const summary = result?.ok ? 'Ready' : 'No valid result';
+  const payload = result?.ok ? result?.calibration ?? result : result;
+
   return (
-    <div className="p-4 bg-zinc-900/40 border border-zinc-800/40 rounded-xl">
-      <div className="flex items-center justify-between mb-2">
-        <h3 className="text-sm font-semibold">Result</h3>
+    <div className="rounded-2xl border border-white/8 bg-white/[0.03] p-3">
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <div>
+          <div className="text-[11px] uppercase tracking-[0.22em] text-zinc-500">Snapshot</div>
+          <div className="text-sm font-semibold text-white">{summary}</div>
+        </div>
+
         <button
           onClick={onDownload}
-          className="text-xs bg-emerald-600 px-2 py-1 rounded disabled:opacity-40"
+          disabled={!result?.ok}
+          className="h-9 rounded-full bg-emerald-500 px-4 text-sm font-semibold text-black transition hover:bg-emerald-400 disabled:cursor-not-allowed disabled:opacity-40"
         >
           Download
         </button>
       </div>
-      <div className="text-xs font-mono text-zinc-200 p-2 bg-black/40 rounded max-h-64 overflow-auto">
-        <pre>{result ? JSON.stringify(result, null, 2) : 'No result yet'}</pre>
+
+      <div className="rounded-xl border border-white/8 bg-black/30 p-3 font-mono text-[11px] leading-relaxed text-zinc-300">
+        <pre className="whitespace-pre-wrap break-words">
+          {payload ? JSON.stringify(payload, null, 2).slice(0, 1800) : 'No result yet'}
+        </pre>
       </div>
     </div>
   );
 }
-

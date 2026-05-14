@@ -44,23 +44,10 @@ function formatPercent(ratio?: number | null) {
 }
 
 export const CalibrationNotifier: React.FC = () => {
-  const { calibrationStatus, runtimeStatus, loading, error } = useCalibrationStatus();
+  const { calibrationStatus, loading, error } = useCalibrationStatus();
 
   const messages = useMemo(() => {
     const list: { key: string; severity: Severity; lines: string[] }[] = [];
-
-    // Critical conditions
-    if (runtimeStatus?.status === 'INVALID') {
-      const key = `runtime-invalid-${runtimeStatus.score ?? 'na'}`;
-      list.push({
-        key,
-        severity: 'critical',
-        lines: [
-          `Runtime status: INVALID (score: ${runtimeStatus.score ?? 'n/a'})`,
-          ...(runtimeStatus.reasons?.length ? ['Reasons: ' + runtimeStatus.reasons.join('; ')] : []),
-        ],
-      });
-    }
 
     if (calibrationStatus) {
       if (calibrationStatus.calibration_ready === false && calibrationStatus.has_best_calibration === false) {
@@ -80,21 +67,6 @@ export const CalibrationNotifier: React.FC = () => {
     }
 
     // Warnings
-    if (runtimeStatus?.status === 'SUSPECT') {
-      list.push({
-        key: 'runtime-suspect',
-        severity: 'warning',
-        lines: [`Runtime status: SUSPECT (score: ${runtimeStatus.score ?? 'n/a'})`, ...(runtimeStatus.reasons || [])],
-      });
-    }
-
-    if (runtimeStatus?.reasons && runtimeStatus.reasons.length > 0) {
-      list.push({
-        key: 'runtime-reasons',
-        severity: 'warning',
-        lines: ['Runtime reasons: ' + runtimeStatus.reasons.join('; ')],
-      });
-    }
 
     const coverage = calibrationStatus?.progress?.coverage_ratio ?? calibrationStatus?.progress?.coverage_ratio;
     if (typeof coverage === 'number' && coverage < 0.7) {
@@ -106,7 +78,7 @@ export const CalibrationNotifier: React.FC = () => {
     }
 
     // OK
-    if (runtimeStatus?.status === 'VALID' && calibrationStatus?.calibration_ready === true) {
+    if (calibrationStatus?.calibration_ready === true) {
       list.push({
         key: 'ok',
         severity: 'ok',
@@ -117,7 +89,7 @@ export const CalibrationNotifier: React.FC = () => {
     // Info: errors / loading
     if (error) {
       list.push({ key: `fetch-error-${error}`, severity: 'critical', lines: [`Fetch error: ${error}`] });
-    } else if (loading && !calibrationStatus && !runtimeStatus) {
+    } else if (loading && !calibrationStatus) {
       list.push({ key: 'loading', severity: 'info', lines: ['Loading calibration status...'] });
     }
 
@@ -147,7 +119,7 @@ export const CalibrationNotifier: React.FC = () => {
     }
 
     return unique;
-  }, [calibrationStatus, runtimeStatus, loading, error]);
+  }, [calibrationStatus, loading, error]);
 
   if (!messages.length) return null;
 

@@ -1,190 +1,160 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import StreamViewer from './components/StreamViewer';
+import StatusPanel from './components/StatusPanel';
 import { useCalibrationStatus } from './hooks/useCalibrationStatus';
-import { BASE_URL, postStart, postStop, postPredictionStart, postPredictionStop } from './api';
-import type { ResultResponse } from './api';
+import {
+  BASE_URL,
+  postStart,
+  postStop,
+} from './api';
+import { Play, Square } from 'lucide-react';
 
 export default function CalibrationPage() {
-  const [result, setResult] = useState<ResultResponse | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const [predLoading, setPredLoading] = useState(false);
 
   const baseUrl = BASE_URL;
 
-  const { status, runtimeStatus, lastError, startPolling, refresh } = useCalibrationStatus(() => baseUrl);
+  const {
+    status,
+    lastError,
+    startPolling,
+    refresh,
+  } = useCalibrationStatus(() => baseUrl);
 
-  const onStarted = useCallback(() => {
-    startPolling();
-  }, [startPolling]);
-
-  // Always keep polling the calibration status while this page is mounted.
   useEffect(() => {
     startPolling();
   }, [startPolling]);
 
-  // Notify user if runtime reports low-quality calibration.
-  const prevRuntimeRef = useRef<typeof runtimeStatus | null>(null);
-  useEffect(() => {
-    const rt = runtimeStatus;
-    if (!rt) {
-      prevRuntimeRef.current = rt;
-      return;
-    }
-    const score = typeof rt.score === 'number' ? rt.score : 0;
-    const isBad = rt.status !== 'VALID' || score < 0.8;
-    const prev = prevRuntimeRef.current;
-    const prevBad = prev ? prev.status !== 'VALID' || (typeof prev.score === 'number' ? prev.score : 0) < 0.8 : false;
-
-    if (isBad && !prevBad) {
-      setMessage('Calibration quality low — please recalibrate');
-    } else if (!isBad && prevBad) {
-      setMessage('Calibration quality restored');
-    }
-
-    prevRuntimeRef.current = rt;
-  }, [runtimeStatus, setMessage]);
-
-  const onStopped = useCallback(() => {
-    refresh();
-  }, [refresh]);
-
-  const handleResult = useCallback((res: ResultResponse) => {
-    setResult(res);
+  const quality = useMemo(() => {
+    return {
+      text: 'UNKNOWN',
+      tone: 'bg-zinc-800 text-zinc-300 border-zinc-700',
+    };
   }, []);
 
-  const handleDownload = useCallback(() => {
-    if (!result || !result.ok) return;
+  const coverage = status?.progress?.coverage_ratio ?? 0;
+  const coveragePct = Math.round(coverage * 100);
 
-    const blob = new Blob([JSON.stringify((result as any).calibration, null, 2)], {
-      type: 'application/json',
-    });
+  // runtime-based quality checks removed
 
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'calibration.json';
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    URL.revokeObjectURL(url);
-  }, [result]);
+  const handleStartStop = useCallback(async () => {
+    if (loading) return;
 
-  // derive display state for runtime quality indicator
-  const quality = (() => {
-    if (!runtimeStatus) return { text: 'Unknown', color: 'bg-zinc-700', hint: 'No data' };
-    const score = typeof runtimeStatus.score === 'number' ? runtimeStatus.score : 0;
-    if (runtimeStatus.status === 'INVALID' || score < 0.6) return { text: 'Poor', color: 'bg-rose-600', hint: `score=${score.toFixed(2)}` };
-    if (runtimeStatus.status === 'SUSPECT' || score < 0.8) return { text: 'Fair', color: 'bg-amber-500', hint: `score=${score.toFixed(2)}` };
-    return { text: 'Good', color: 'bg-emerald-600', hint: `score=${score.toFixed(2)}` };
-  })();
+    setLoading(true);
+
+    try {
+      if (status?.running) {
+        await postStop(baseUrl);
+        setMessage('Stopped');
+        refresh();
+      } else {
+        const res = await postStart(baseUrl);
+        setMessage(res.status?.message ?? 'Started');
+        startPolling();
+      }
+    } catch (e: any) {
+      setMessage(String(e?.message ?? e));
+    } finally {
+      setLoading(false);
+    }
+  }, [
+    baseUrl,
+    loading,
+    refresh,
+    startPolling,
+    status?.running,
+  ]);
 
   return (
-    <div className="min-h-screen w-full bg-black text-white">
-      <div className="mx-auto w-full max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
-        {/* Main stream area */}
-        <div className="mb-6">
-          <StreamViewer baseUrl={baseUrl} />
-        </div>
+    <div className="h-full min-h-0 overflow-hidden text-white">
+      <div className="flex h-full min-h-0 flex-col gap-4 p-4 lg:p-6">
 
-        {/* Minimal controls and big progress */}
-        <div className="flex flex-col items-center gap-6">
-          <div className="w-full max-w-3xl">
-            <div className="text-center text-4xl font-bold mb-4">Калибровка</div>
-            <div className="w-full bg-zinc-800 rounded-full h-8 overflow-hidden">
+        {/* top */}
+        <div className="shrink-0 rounded-[1.75rem] border border-white/8 bg-black/25 px-5 py-5 backdrop-blur-xl">
+          <div className="flex flex-col gap-5 xl:flex-row xl:items-center xl:justify-between">
+
+            <div className="min-w-0">
+              <div className="text-[11px] uppercase tracking-[0.28em] text-zinc-500">
+                Calibration
+              </div>
+
+              <div className="mt-1 text-2xl font-semibold tracking-tight text-white">
+                Live calibration
+              </div>
+            </div>
+
+            <div className="flex items-center gap-3">
+
+              <span
+                className={`inline-flex h-11 items-center rounded-full border px-5 text-sm font-semibold ${quality.tone}`}
+              >
+                {quality.text}
+              </span>
+
+              <button
+                onClick={handleStartStop}
+                disabled={loading}
+                className={`inline-flex h-14 min-w-[180px] items-center justify-center gap-3 rounded-full px-8 text-base font-bold transition disabled:cursor-not-allowed disabled:opacity-50 ${
+                  status?.running
+                    ? 'bg-rose-500 text-white hover:bg-rose-400'
+                    : 'bg-emerald-500 text-black hover:bg-emerald-400'
+                }`}
+              >
+                {status?.running ? (
+                  <Square className="h-5 w-5" />
+                ) : (
+                  <Play className="h-5 w-5" />
+                )}
+
+                {loading
+                  ? 'WORKING'
+                  : status?.running
+                  ? 'STOP'
+                  : 'START'}
+              </button>
+            </div>
+          </div>
+
+          <div className="mt-5">
+            <div className="mb-2 flex items-center justify-between text-xs uppercase tracking-[0.22em] text-zinc-500">
+              <span>Coverage</span>
+              <span>{coveragePct}%</span>
+            </div>
+
+            <div className="h-4 overflow-hidden rounded-full bg-zinc-800">
               <div
-                style={{ width: `${Math.round((status?.progress?.coverage_ratio ?? 0) * 100)}%` }}
-                className="h-8 bg-emerald-500 transition-all"
+                style={{
+                  width: `${coveragePct}%`,
+                }}
+                className="h-full rounded-full bg-gradient-to-r from-emerald-500 to-lime-400 transition-all duration-300"
               />
             </div>
-            <div className="text-center text-3xl font-mono mt-3">
-              {Math.round((status?.progress?.coverage_ratio ?? 0) * 100)}%
-            </div>
+          </div>
+        </div>
+
+        {/* body */}
+        <div className="grid min-h-0 flex-1 grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1.7fr)_360px]">
+
+          {/* stream */}
+          <div className="min-h-0">
+            <StreamViewer baseUrl={baseUrl} />
           </div>
 
-          <div className="flex gap-6 items-center">
-            <button
-              onClick={async () => {
-                if (loading) return;
-                setLoading(true);
-                try {
-                  if (status?.running) {
-                    await postStop(baseUrl);
-                    setMessage('Остановлено');
-                    refresh();
-                  } else {
-                    const res = await postStart(baseUrl);
-                    setMessage(res.status?.message ?? 'Старт');
-                    startPolling();
-                  }
-                } catch (e: any) {
-                  setMessage(String(e?.message ?? e));
-                } finally {
-                  setLoading(false);
-                }
-              }}
-              className="bg-emerald-600 px-10 py-4 rounded-full text-2xl font-bold shadow-lg"
-            >
-              {loading ? '...' : status?.running ? 'STOP' : 'START'}
-            </button>
-            <div className="flex items-center gap-3">
-              <button
-                onClick={async () => {
-                  if (predLoading) return;
-                  setPredLoading(true);
-                  try {
-                    const res = await postPredictionStart(baseUrl);
-                    if (res?.ok) {
-                      setMessage(`Prediction started pid=${res.pid ?? 'n/a'}`);
-                    } else {
-                      setMessage(`Prediction start error: ${res?.error ?? 'unknown'}`);
-                    }
-                  } catch (e: any) {
-                    setMessage(String(e?.message ?? e));
-                  } finally {
-                    setPredLoading(false);
-                  }
-                }}
-                className="bg-indigo-600 px-4 py-2 rounded-full text-lg font-semibold shadow"
-              >
-                {predLoading ? '...' : 'Start Prediction'}
-              </button>
+          {/* side */}
+          <aside className="flex min-h-0 flex-col gap-4 overflow-hidden">
 
-              <button
-                onClick={async () => {
-                  if (predLoading) return;
-                  setPredLoading(true);
-                  try {
-                    const res = await postPredictionStop(baseUrl);
-                    if (res?.ok) {
-                      setMessage('Prediction stopped');
-                    } else {
-                      setMessage('Error stopping prediction');
-                    }
-                  } catch (e: any) {
-                    setMessage(String(e?.message ?? e));
-                  } finally {
-                    setPredLoading(false);
-                  }
-                }}
-                className="bg-zinc-700 px-4 py-2 rounded-full text-lg font-semibold shadow"
-              >
-                Stop Prediction
-              </button>
-            </div>
-          </div>
+            <StatusPanel
+              status={status}
+              lastError={lastError}
+            />
 
-          {message && (
-            <div className="text-xl text-rose-400 font-semibold mt-4">
-              {message}
-            </div>
-          )}
-
-          {lastError && (
-            <div className="text-lg text-rose-400 font-mono mt-2">
-              Ошибка: {lastError}
-            </div>
-          )}
+            {message && (
+              <div className="rounded-[1.5rem] border border-white/8 bg-white/[0.03] px-4 py-4 text-sm text-zinc-200">
+                {message}
+              </div>
+            )}
+          </aside>
         </div>
       </div>
     </div>

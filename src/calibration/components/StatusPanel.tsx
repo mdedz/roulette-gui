@@ -8,32 +8,80 @@ type Props = {
 
 export default function StatusPanel({ status, lastError }: Props) {
   const coverage = status?.progress?.coverage_ratio ?? 0;
+  const coveragePct = Math.round(coverage * 100);
+
+  const stateTone =
+    status?.running
+      ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30'
+      : 'bg-zinc-800 text-zinc-300 border-zinc-700';
+
   return (
-    <div className="p-4 bg-zinc-900/40 border border-zinc-800/40 rounded-xl">
-      <h3 className="text-sm font-semibold mb-3">Status</h3>
+    <div className="rounded-[1.75rem] border border-white/8 bg-black/25 p-4">
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <div>
+          <div className="text-[11px] uppercase tracking-[0.22em] text-zinc-500">Status</div>
+          <div className="text-base font-semibold text-white">Calibration state</div>
+        </div>
+
+        <span className={`inline-flex items-center rounded-full border px-3 py-1 text-xs font-semibold ${stateTone}`}>
+          {status?.running ? 'Running' : 'Stopped'}
+        </span>
+      </div>
+
       {status ? (
-        <div className="space-y-2 text-sm">
-          <div className="flex justify-between"><span className="text-zinc-400">lifecycle_state</span><span className="font-mono">{status.lifecycle_state}</span></div>
-          <div className="flex justify-between"><span className="text-zinc-400">current_state</span><span className="font-mono">{status.current_state}</span></div>
-          <div className="flex justify-between"><span className="text-zinc-400">running</span><span className="font-mono">{String(status.running)}</span></div>
-          <div className="flex justify-between"><span className="text-zinc-400">calibration_ready</span><span className="font-mono">{String(status.calibration_ready)}</span></div>
-          <div className="flex justify-between"><span className="text-zinc-400">samples_collected</span><span className="font-mono">{status.samples_collected}</span></div>
-          <div className="flex justify-between"><span className="text-zinc-400">bins</span><span className="font-mono">{status.bins_filled} / {status.bins_total}</span></div>
-          <div>
-            <div className="text-zinc-400 text-xs">coverage</div>
-            <div className="w-full bg-zinc-800 rounded h-3 mt-1 overflow-hidden">
-              <div style={{ width: `${Math.round(coverage * 100)}%` }} className="h-3 bg-emerald-500" />
+        <div className="grid grid-cols-2 gap-2 text-sm">
+          <div className="rounded-xl border border-white/8 bg-white/[0.03] p-3">
+            <div className="text-[11px] uppercase tracking-[0.18em] text-zinc-500">Samples</div>
+            <div className="mt-1 text-lg font-semibold text-white">{status.samples_collected}</div>
+          </div>
+
+          <div className="rounded-xl border border-white/8 bg-white/[0.03] p-3">
+            <div className="text-[11px] uppercase tracking-[0.18em] text-zinc-500">Bins</div>
+            <div className="mt-1 text-lg font-semibold text-white">
+              {status.bins_filled} / {status.bins_total}
             </div>
           </div>
-          <div className="text-sm text-zinc-400">status_message</div>
-          <div className="p-2 bg-black/30 rounded text-xs font-mono text-zinc-200">{status.status_message}</div>
-          {status.last_error && <div className="text-sm text-rose-400">last_error: {status.last_error}</div>}
-          {lastError && <div className="text-sm text-rose-400">network: {lastError}</div>}
+
+          <div className="col-span-2 rounded-xl border border-white/8 bg-white/[0.03] p-3">
+            <div className="flex items-center justify-between text-[11px] uppercase tracking-[0.18em] text-zinc-500">
+              <span>Coverage</span>
+              <span>{coveragePct}%</span>
+            </div>
+            <div className="mt-2 h-2 overflow-hidden rounded-full bg-zinc-800">
+              <div style={{ width: `${coveragePct}%` }} className="h-full rounded-full bg-gradient-to-r from-emerald-500 to-lime-400" />
+            </div>
+          </div>
+
+          <div className="col-span-2 rounded-xl border border-white/8 bg-white/[0.03] p-3">
+            <div className="text-[11px] uppercase tracking-[0.18em] text-zinc-500">State</div>
+            <div className="mt-1 text-sm font-medium text-zinc-200">{status.lifecycle_state}</div>
+            <div className="text-sm text-zinc-400">{status.current_state}</div>
+          </div>
+
+          {status.status_message && (
+            <div className="col-span-2 rounded-xl border border-white/8 bg-white/[0.03] p-3">
+              <div className="text-[11px] uppercase tracking-[0.18em] text-zinc-500">Message</div>
+              <div className="mt-1 text-sm text-zinc-200">{status.status_message}</div>
+            </div>
+          )}
+
+          {status.last_error && (
+            <div className="col-span-2 rounded-xl border border-rose-500/20 bg-rose-500/10 p-3 text-sm text-rose-200">
+              {status.last_error}
+            </div>
+          )}
+
+          {lastError && (
+            <div className="col-span-2 rounded-xl border border-rose-500/20 bg-rose-500/10 p-3 text-sm text-rose-200">
+              Network: {lastError}
+            </div>
+          )}
         </div>
       ) : (
-        <div className="text-sm text-zinc-500">No status yet.</div>
+        <div className="rounded-xl border border-white/8 bg-white/[0.03] p-3 text-sm text-zinc-500">
+          No status yet
+        </div>
       )}
     </div>
   );
 }
-
