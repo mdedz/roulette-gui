@@ -1,4 +1,10 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { clsx, type ClassValue } from 'clsx';
+import { twMerge } from 'tailwind-merge';
+
+function cn(...inputs: ClassValue[]) {
+  return twMerge(clsx(inputs));
+}
 import StreamViewer from './components/StreamViewer';
 import StatusPanel from './components/StatusPanel';
 import { useCalibrationStatus } from './hooks/useCalibrationStatus';
@@ -35,6 +41,49 @@ export default function CalibrationPage() {
 
   const coverage = status?.progress?.coverage_ratio ?? 0;
   const coveragePct = Math.round(coverage * 100);
+  const [isPulsing, setIsPulsing] = useState(false);
+  const [isFading, setIsFading] = useState(false);
+  const [isCleared, setIsCleared] = useState(false);
+  const prevReadyRef = useRef<boolean | null>(null);
+
+  useEffect(() => {
+    const prev = prevReadyRef.current;
+    const now = Boolean(status?.calibration_ready);
+    // Trigger pulse -> fade -> clear when calibration becomes ready
+    if (prev === false && now === true) {
+      // reset any prior state
+      setIsCleared(false);
+      setIsFading(false);
+      // start pulsing
+      setIsPulsing(true);
+      const pulseDuration = 1200; // ms
+      const fadeDuration = 700; // ms
+
+      const t1 = window.setTimeout(() => {
+        setIsFading(true);
+        setIsPulsing(false);
+        const t2 = window.setTimeout(() => {
+          setIsCleared(true);
+          setIsFading(false);
+        }, fadeDuration);
+        // clear fallback
+        return () => window.clearTimeout(t2);
+      }, pulseDuration);
+
+      return () => {
+        window.clearTimeout(t1);
+      };
+    }
+
+    // If calibration becomes not ready again, restore visuals
+    if (now === false) {
+      setIsPulsing(false);
+      setIsFading(false);
+      setIsCleared(false);
+    }
+
+    prevReadyRef.current = now;
+  }, [status?.calibration_ready]);
 
   // runtime-based quality checks removed
 
@@ -122,12 +171,15 @@ export default function CalibrationPage() {
               <span>{coveragePct}%</span>
             </div>
 
-            <div className="h-4 overflow-hidden rounded-full bg-zinc-800">
+            <div className={cn('h-4 overflow-hidden rounded-full bg-zinc-800 transition-opacity', isFading || isCleared ? 'opacity-0' : 'opacity-100')}>
               <div
                 style={{
-                  width: `${coveragePct}%`,
+                  width: `${isCleared ? 0 : coveragePct}%`,
                 }}
-                className="h-full rounded-full bg-gradient-to-r from-emerald-500 to-lime-400 transition-all duration-300"
+                className={cn(
+                  'h-full rounded-full bg-gradient-to-r from-emerald-500 to-lime-400 transition-all duration-300',
+                  isPulsing ? 'animate-pulse shadow-[0_0_30px_rgba(16,185,129,0.12)]' : '',
+                )}
               />
             </div>
           </div>

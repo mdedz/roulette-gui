@@ -39,6 +39,34 @@ async function startServer() {
   };
 
   // API Routes
+  app.get('/api/tracking/health', async (_req, res) => {
+    const trackingApiBaseUrl = (
+      process.env.TRACKING_API_URL ||
+      process.env.REACT_APP_API_URL ||
+      'http://100.109.227.119:8765'
+    ).replace(/\/$/, '');
+    const targetUrl = `${trackingApiBaseUrl}/api/tracking/health`;
+
+    console.log(`[tracking-health] GET ${targetUrl}`);
+
+    try {
+      const upstream = await fetch(targetUrl, { cache: 'no-store' });
+      const contentType = upstream.headers.get('content-type') || '';
+      const body = await upstream.text();
+
+      res.status(upstream.status);
+
+      if (contentType.includes('application/json')) {
+        res.type('application/json').send(body);
+      } else {
+        res.type('text/plain').send(body);
+      }
+    } catch (error) {
+      console.error('[tracking-health] proxy failed:', error);
+      res.status(502).json({ status: 'CRITICAL', tracking_health_score: 0, error: 'Tracking health backend unreachable' });
+    }
+  });
+
   app.post('/api/spins', (req, res) => {
     const { number } = req.body;
     

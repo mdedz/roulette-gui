@@ -1,9 +1,9 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import CalibrationPage from './calibration/CalibrationPage';
-import { BASE_URL } from './calibration/api';
-import { Hash, ShieldCheck, Signal, Sparkles, Gauge, Plus, Play, Square } from 'lucide-react';
+import { ShieldCheck, Signal, Sparkles, Gauge, Plus, Play, Square } from 'lucide-react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
+import { BASE_URL, postPredictionStart, postPredictionStop } from './calibration/api';
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -34,7 +34,7 @@ export default function App() {
   const [spins, setSpins] = useState<number[]>([]);
   const [connected, setConnected] = useState(false);
   const [trackingHealth, setTrackingHealth] = useState<{
-    status: 'HEALTHY' | 'WARNING' | 'CRITICAL';
+    status: 'HEALTHY' | 'WARNING' | 'CRITICAL' | 'UNKNOWN';
     tracking_health_score?: number;
     last_update_ts?: string;
     [key: string]: any;
@@ -42,6 +42,9 @@ export default function App() {
   const [inputNumber, setInputNumber] = useState<string>('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showCalibration, setShowCalibration] = useState(false);
+  const [isPredictionRunning, setIsPredictionRunning] = useState(false);
+  const [isPredictionLoading, setIsPredictionLoading] = useState(false);
+  const [predictionMessage, setPredictionMessage] = useState<string | null>(null);
 
   const ws = useRef<WebSocket | null>(null);
 
@@ -131,8 +134,7 @@ export default function App() {
 
     const fetchHealth = async () => {
       try {
-        const base = (BASE_URL || '').replace(/\/$/, '');
-        const res = await fetch(`${base}/api/tracking/health`, { cache: 'no-store' });
+        const res = await fetch('/api/tracking/health', { cache: 'no-store' });
         if (!res.ok) throw new Error(`status ${res.status}`);
 
         const text = await res.text();
@@ -148,8 +150,16 @@ export default function App() {
 
         if (!mounted) return;
 
-        if (json && json.status) {
-          setTrackingHealth(json);
+        if (json) {
+          setTrackingHealth({
+            ...json,
+            status: json.status ?? json.tracking_status ?? json.health_status ?? 'UNKNOWN',
+            tracking_health_score:
+              json.tracking_health_score ??
+              json.accuracy_score ??
+              json.accuracy ??
+              json.health_score,
+          });
         } else {
           setTrackingHealth((prev) => prev ?? { status: 'CRITICAL' });
         }
@@ -193,6 +203,33 @@ export default function App() {
     [inputNumber]
   );
 
+  const handlePredictionStartStop = useCallback(async () => {
+    if (isPredictionLoading) return;
+
+    setIsPredictionLoading(true);
+    setPredictionMessage(null);
+
+    try {
+      if (isPredictionRunning) {
+        const res = await postPredictionStop(BASE_URL);
+        if (res.ok === false) throw new Error('Prediction stop failed');
+
+        setIsPredictionRunning(false);
+        setPredictionMessage('Predictor stopped');
+      } else {
+        const res = await postPredictionStart(BASE_URL);
+        if (res.ok === false) throw new Error(res.error ?? 'Prediction start failed');
+
+        setIsPredictionRunning(true);
+        setPredictionMessage(res.pid ? `Predictor started - PID ${res.pid}` : 'Predictor started');
+      }
+    } catch (error: any) {
+      setPredictionMessage(String(error?.message ?? error));
+    } finally {
+      setIsPredictionLoading(false);
+    }
+  }, [isPredictionLoading, isPredictionRunning]);
+
   const latest = spins[0];
 
   const latestInfo = useMemo(() => {
@@ -204,6 +241,16 @@ export default function App() {
   }, [latest]);
 
   const trackingTone = getTrackingTone(trackingHealth?.status);
+
+  function formatAccuracy(score?: number) {
+    if (score === undefined || score === null) return null;
+    if (typeof score !== 'number') return String(score);
+    // If score looks like 0..1 treat as fraction and show percent, otherwise show as-is with 2 decimals
+    if (score > 0 && score <= 1) {
+      return `${Math.round(score * 100)}%`;
+    }
+    return `${Number(score).toFixed(2)}`;
+  }
 
   return (
     <div className="h-dvh overflow-hidden bg-[radial-gradient(circle_at_top_left,rgba(16,185,129,0.12),transparent_28%),radial-gradient(circle_at_top_right,rgba(59,130,246,0.10),transparent_22%),linear-gradient(to_bottom,#050505,#09090b_40%,#050505)] text-white">
@@ -221,15 +268,47 @@ export default function App() {
                     <Signal className="h-3 w-3" />
                     {connected ? 'Live' : 'Connecting'}
                   </span>
-                  <span className={cn('inline-flex items-center gap-1 rounded-full border px-2 py-1', trackingTone)}>
+                  <span className={cn('inline-flex items-center gap-2 rounded-full border px-2 py-1', trackingTone)}>
                     <ShieldCheck className="h-3 w-3" />
-                    {trackingHealth?.status ?? 'UNKNOWN'}
+                    <span>{trackingHealth?.status ?? 'UNKNOWN'}</span>
+                    {trackingHealth?.tracking_health_score !== undefined && (
+                      <span className="ml-1 rounded-full bg-white/5 px-2 py-0.5 text-xs text-zinc-300">
+                        {formatAccuracy(trackingHealth.tracking_health_score)}
+                      </span>
+                    )}
                   </span>
                 </div>
               </div>
             </div>
 
             <div className="ml-auto flex items-center gap-2">
+              <div className="relative">
+                <button
+                  onClick={handlePredictionStartStop}
+                  disabled={isPredictionLoading}
+                  className={cn(
+                    'inline-flex h-10 min-w-[128px] items-center justify-center gap-2 rounded-full px-5 text-sm font-bold transition disabled:cursor-not-allowed disabled:opacity-50',
+                    isPredictionRunning
+                      ? 'bg-rose-500 text-white shadow-[0_0_28px_rgba(244,63,94,0.24)] hover:bg-rose-400'
+                      : 'bg-emerald-500 text-black shadow-[0_0_28px_rgba(16,185,129,0.22)] hover:bg-emerald-400'
+                  )}
+                  title={predictionMessage ?? undefined}
+                >
+                  {isPredictionRunning ? (
+                    <Square className="h-4 w-4" />
+                  ) : (
+                    <Play className="h-4 w-4" />
+                  )}
+                  {isPredictionLoading ? 'WORKING' : isPredictionRunning ? 'STOP' : 'PREDICT'}
+                </button>
+
+                {predictionMessage && (
+                  <div className="absolute right-0 top-12 z-10 hidden max-w-[260px] rounded-2xl border border-white/10 bg-black/80 px-3 py-2 text-xs text-zinc-200 shadow-2xl backdrop-blur md:block">
+                    {predictionMessage}
+                  </div>
+                )}
+              </div>
+
               <button
                 onClick={() => setShowCalibration((s) => !s)}
                 className="inline-flex h-10 items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 text-sm font-medium text-white transition hover:border-white/20 hover:bg-white/10"
