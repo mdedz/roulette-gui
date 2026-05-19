@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import CalibrationPage from './calibration/CalibrationPage';
-import { ShieldCheck, Signal, Sparkles, Gauge, Plus, Play, Square } from 'lucide-react';
+import { LoaderCircle, ShieldCheck, Signal, Sparkles, Gauge, Plus, Play, Square } from 'lucide-react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import { BASE_URL, postPredictionStart, postPredictionStop } from './calibration/api';
@@ -30,21 +30,129 @@ function getTrackingTone(status?: string) {
   return 'bg-zinc-800 text-zinc-300 border-zinc-700';
 }
 
+type TrackingStatus = 'HEALTHY' | 'WARNING' | 'CRITICAL';
+
+type TrackingHealth = {
+  status: TrackingStatus;
+  tracking_health_score?: number;
+  last_update_ts?: string;
+  error?: string;
+  [key: string]: any;
+};
+
+const TRACKING_HEALTH_URL = '/api/tracking/health';
+const TRACKING_HEALTH_INTERVAL_MS = 2000;
+const TRACKING_HEALTH_TIMEOUT_MS = 5000;
+
+function normalizeTrackingStatus(value: unknown): TrackingStatus | undefined {
+  if (typeof value === 'boolean') return value ? 'HEALTHY' : 'CRITICAL';
+  if (typeof value !== 'string') return undefined;
+
+  const status = value.trim().toUpperCase();
+  if (!status || status === 'UNKNOWN') return undefined;
+
+  if (['HEALTHY', 'OK', 'ONLINE', 'UP', 'READY', 'RUNNING', 'ACTIVE', 'STARTED', 'TRUE', 'SUCCESS'].includes(status)) {
+    return 'HEALTHY';
+  }
+
+  if (['WARNING', 'WARN', 'DEGRADED', 'PARTIAL', 'SLOW'].includes(status)) {
+    return 'WARNING';
+  }
+
+  if (['CRITICAL', 'ERROR', 'ERR', 'FAILED', 'FAILURE', 'DOWN', 'OFFLINE', 'STOPPED', 'UNHEALTHY', 'FALSE'].includes(status)) {
+    return 'CRITICAL';
+  }
+
+  return undefined;
+}
+
+function normalizeTrackingScore(value: unknown): number | undefined {
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value === 'string' && value.trim() !== '') {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return undefined;
+}
+
+function deriveTrackingStatus(payload: any, httpOk: boolean): TrackingStatus {
+  const candidates = [
+    payload?.status,
+    payload?.tracking_status,
+    payload?.health_status,
+    payload?.state,
+    payload?.lifecycle_state,
+    payload?.current_state,
+    payload?.health?.status,
+    payload?.tracking?.status,
+    payload?.result?.status,
+    payload?.healthy,
+    payload?.is_healthy,
+    payload?.ok,
+    payload?.running,
+    payload?.tracking_ok,
+  ];
+
+  for (const candidate of candidates) {
+    const normalized = normalizeTrackingStatus(candidate);
+    if (normalized) return normalized;
+  }
+
+  if (payload?.error || payload?.ok === false || !httpOk) return 'CRITICAL';
+  return 'HEALTHY';
+}
+
+function normalizeTrackingHealth(payload: any, httpOk: boolean): TrackingHealth {
+  const tracking_health_score = normalizeTrackingScore(
+    payload?.tracking_health_score ?? payload?.accuracy_score ?? payload?.accuracy ?? payload?.health_score ?? payload?.score
+  );
+
+  return {
+    ...(payload && typeof payload === 'object' ? payload : {}),
+    status: deriveTrackingStatus(payload, httpOk),
+    tracking_health_score,
+    last_update_ts: payload?.last_update_ts ?? payload?.updated_at ?? new Date().toISOString(),
+  };
+}
+
+async function fetchTrackingHealth(): Promise<TrackingHealth> {
+  const controller = new AbortController();
+  const timeoutId = window.setTimeout(() => controller.abort(), TRACKING_HEALTH_TIMEOUT_MS);
+
+  try {
+    const res = await fetch(TRACKING_HEALTH_URL, {
+      cache: 'no-store',
+      headers: { Accept: 'application/json' },
+      signal: controller.signal,
+    });
+    const text = await res.text();
+    let payload: any = {};
+
+    if (text) {
+      try {
+        payload = JSON.parse(text);
+      } catch {
+        payload = { status: text };
+      }
+    }
+
+    return normalizeTrackingHealth(payload, res.ok);
+  } finally {
+    window.clearTimeout(timeoutId);
+  }
+}
+
 export default function App() {
   const [spins, setSpins] = useState<number[]>([]);
   const [connected, setConnected] = useState(false);
-  const [trackingHealth, setTrackingHealth] = useState<{
-    status: 'HEALTHY' | 'WARNING' | 'CRITICAL' | 'UNKNOWN';
-    tracking_health_score?: number;
-    last_update_ts?: string;
-    [key: string]: any;
-  } | null>(null);
+  const [trackingHealth, setTrackingHealth] = useState<TrackingHealth>({ status: 'CRITICAL' });
   const [inputNumber, setInputNumber] = useState<string>('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showCalibration, setShowCalibration] = useState(false);
   const [isPredictionRunning, setIsPredictionRunning] = useState(false);
   const [isPredictionLoading, setIsPredictionLoading] = useState(false);
   const [predictionMessage, setPredictionMessage] = useState<string | null>(null);
+  const [predictionMessageType, setPredictionMessageType] = useState<'success' | 'error'>('success');
 
   const ws = useRef<WebSocket | null>(null);
 
@@ -131,46 +239,32 @@ export default function App() {
   useEffect(() => {
     let mounted = true;
     let intervalId: number | undefined;
+    let inFlight = false;
 
     const fetchHealth = async () => {
+      if (inFlight) return;
+      inFlight = true;
+
       try {
-        const res = await fetch('/api/tracking/health', { cache: 'no-store' });
-        if (!res.ok) throw new Error(`status ${res.status}`);
-
-        const text = await res.text();
-        let json: any = null;
-
-        if (text) {
-          try {
-            json = JSON.parse(text);
-          } catch {
-            json = null;
-          }
-        }
-
+        const health = await fetchTrackingHealth();
         if (!mounted) return;
-
-        if (json) {
-          setTrackingHealth({
-            ...json,
-            status: json.status ?? json.tracking_status ?? json.health_status ?? 'UNKNOWN',
-            tracking_health_score:
-              json.tracking_health_score ??
-              json.accuracy_score ??
-              json.accuracy ??
-              json.health_score,
-          });
-        } else {
-          setTrackingHealth((prev) => prev ?? { status: 'CRITICAL' });
-        }
-      } catch {
+        setTrackingHealth(health);
+      } catch (error: any) {
         if (!mounted) return;
-        setTrackingHealth((prev) => ({ ...(prev ?? {}), status: 'CRITICAL' }));
+        console.warn('[tracking-health] poll failed', error);
+        setTrackingHealth((prev) => ({
+          ...prev,
+          status: 'CRITICAL',
+          error: error?.name === 'AbortError' ? 'Tracking health request timed out' : String(error?.message ?? error),
+          last_update_ts: new Date().toISOString(),
+        }));
+      } finally {
+        inFlight = false;
       }
     };
 
     fetchHealth();
-    intervalId = window.setInterval(fetchHealth, 2000);
+    intervalId = window.setInterval(fetchHealth, TRACKING_HEALTH_INTERVAL_MS);
 
     return () => {
       mounted = false;
@@ -215,15 +309,18 @@ export default function App() {
         if (res.ok === false) throw new Error('Prediction stop failed');
 
         setIsPredictionRunning(false);
+        setPredictionMessageType('success');
         setPredictionMessage('Predictor stopped');
       } else {
         const res = await postPredictionStart(BASE_URL);
         if (res.ok === false) throw new Error(res.error ?? 'Prediction start failed');
 
         setIsPredictionRunning(true);
+        setPredictionMessageType('success');
         setPredictionMessage(res.pid ? `Predictor started - PID ${res.pid}` : 'Predictor started');
       }
     } catch (error: any) {
+      setPredictionMessageType('error');
       setPredictionMessage(String(error?.message ?? error));
     } finally {
       setIsPredictionLoading(false);
@@ -282,19 +379,35 @@ export default function App() {
             </div>
 
             <div className="ml-auto flex items-center gap-2">
-              <div className="relative">
+              <div className="relative flex items-center gap-1 rounded-full border border-white/10 bg-white/[0.04] p-1 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]">
+                <div className="hidden items-center gap-2 px-3 text-xs font-medium text-zinc-300 lg:flex">
+                  <span
+                    className={cn(
+                      'h-2 w-2 rounded-full shadow-[0_0_14px_currentColor]',
+                      isPredictionRunning ? 'bg-emerald-400 text-emerald-400' : 'bg-zinc-500 text-zinc-500'
+                    )}
+                  />
+                  <span>Predictor</span>
+                  <span className={cn('text-[10px] uppercase tracking-[0.22em]', isPredictionRunning ? 'text-emerald-300' : 'text-zinc-500')}>
+                    {isPredictionRunning ? 'On' : 'Off'}
+                  </span>
+                </div>
+
                 <button
                   onClick={handlePredictionStartStop}
                   disabled={isPredictionLoading}
+                  aria-pressed={isPredictionRunning}
                   className={cn(
-                    'inline-flex h-10 min-w-[128px] items-center justify-center gap-2 rounded-full px-5 text-sm font-bold transition disabled:cursor-not-allowed disabled:opacity-50',
+                    'inline-flex h-9 min-w-[118px] items-center justify-center gap-2 rounded-full px-4 text-sm font-bold transition focus:outline-none focus:ring-2 focus:ring-emerald-300/40 disabled:cursor-not-allowed disabled:opacity-60 sm:h-10 sm:min-w-[132px] sm:px-5',
                     isPredictionRunning
-                      ? 'bg-rose-500 text-white shadow-[0_0_28px_rgba(244,63,94,0.24)] hover:bg-rose-400'
-                      : 'bg-emerald-500 text-black shadow-[0_0_28px_rgba(16,185,129,0.22)] hover:bg-emerald-400'
+                      ? 'bg-gradient-to-r from-rose-500 to-red-500 text-white shadow-[0_0_28px_rgba(244,63,94,0.26)] hover:from-rose-400 hover:to-red-400 focus:ring-rose-300/40'
+                      : 'bg-gradient-to-r from-emerald-400 to-lime-400 text-black shadow-[0_0_28px_rgba(16,185,129,0.24)] hover:from-emerald-300 hover:to-lime-300'
                   )}
                   title={predictionMessage ?? undefined}
                 >
-                  {isPredictionRunning ? (
+                  {isPredictionLoading ? (
+                    <LoaderCircle className="h-4 w-4 animate-spin" />
+                  ) : isPredictionRunning ? (
                     <Square className="h-4 w-4" />
                   ) : (
                     <Play className="h-4 w-4" />
@@ -303,7 +416,12 @@ export default function App() {
                 </button>
 
                 {predictionMessage && (
-                  <div className="absolute right-0 top-12 z-10 hidden max-w-[260px] rounded-2xl border border-white/10 bg-black/80 px-3 py-2 text-xs text-zinc-200 shadow-2xl backdrop-blur md:block">
+                  <div
+                    className={cn(
+                      'absolute right-0 top-12 z-10 max-w-[260px] rounded-2xl border bg-black/85 px-3 py-2 text-xs text-zinc-200 shadow-2xl backdrop-blur',
+                      predictionMessageType === 'error' ? 'border-rose-500/30 text-rose-100' : 'border-emerald-500/25 text-emerald-100'
+                    )}
+                  >
                     {predictionMessage}
                   </div>
                 )}
